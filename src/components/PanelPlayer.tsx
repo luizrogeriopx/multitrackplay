@@ -14,6 +14,8 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
   const [position, setPosition] = useState(0);
   const audios = useRef<Record<string, HTMLAudioElement | null>>({});
   const songIdRef = useRef<string | null>(null);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const playbackStateRef = useRef<{ is_playing: boolean; started_at_ms: number | null; position_seconds: number } | null>(null);
 
   async function loadTracksFor(sid: string) {
     songIdRef.current = sid;
@@ -35,23 +37,43 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
     setUrls(map);
   }
 
-  function applyState(state: { current_song_id: string | null; is_playing: boolean; position_seconds: number; started_at_ms: number | null }) {
-    const target = state.is_playing && state.started_at_ms
-      ? (Date.now() - state.started_at_ms) / 1000
-      : state.position_seconds;
-    setPosition(target);
+  const syncAudio = () => {
+    const state = playbackStateRef.current;
+    if (!state) return;
+
     const list = Object.values(audios.current).filter(Boolean) as HTMLAudioElement[];
-    list.forEach((a) => {
-      if (Math.abs(a.currentTime - target) > 0.25) a.currentTime = target;
-    });
-    if (state.is_playing) {
-      list.forEach((a) => { a.play().catch(() => {}); });
+    if (list.length === 0) return;
+
+    if (state.is_playing && state.started_at_ms) {
+      const target = (Date.now() - state.started_at_ms) / 1000;
+      setPosition(target);
       setIsPlaying(true);
+
+      list.forEach((a) => {
+        if (a.paused) {
+          a.play().catch((err) => {
+            if (err.name === "NotAllowedError") {
+              setAutoplayBlocked(true);
+            }
+          });
+        }
+        // Sync if drift is > 300ms
+        if (Math.abs(a.currentTime - target) > 0.3) {
+          a.currentTime = target;
+        }
+      });
     } else {
-      list.forEach((a) => a.pause());
+      setPosition(state.position_seconds);
       setIsPlaying(false);
+
+      list.forEach((a) => {
+        if (!a.paused) a.pause();
+        if (Math.abs(a.currentTime - state.position_seconds) > 0.15) {
+          a.currentTime = state.position_seconds;
+        }
+      });
     }
-  }
+  };
 
   // Subscribe to playback state
   useEffect(() => {
@@ -62,14 +84,27 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
       const sid = (data as any).current_song_id as string | null;
       setSongId(sid);
       songIdRef.current = sid;
+      playbackStateRef.current = {
+        is_playing: (data as any).is_playing,
+        started_at_ms: (data as any).started_at_ms ? Number((data as any).started_at_ms) : null,
+        position_seconds: Number((data as any).position_seconds || 0),
+      };
       if (sid) await loadTracksFor(sid);
-      setTimeout(() => applyState(data as any), 250);
+      syncAudio();
     })();
+
     const channel = supabase
       .channel("playback")
       .on("postgres_changes", { event: "*", schema: "public", table: "playback_state" }, async (payload: any) => {
         const state = payload.new;
         if (!state) return;
+
+        playbackStateRef.current = {
+          is_playing: state.is_playing,
+          started_at_ms: state.started_at_ms ? Number(state.started_at_ms) : null,
+          position_seconds: Number(state.position_seconds || 0),
+        };
+
         if (state.current_song_id !== songIdRef.current) {
           songIdRef.current = state.current_song_id;
           setSongId(state.current_song_id);
@@ -80,10 +115,17 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
             setTracks([]);
           }
         }
-        setTimeout(() => applyState(state), 200);
+        setTimeout(syncAudio, 50);
       })
       .subscribe();
-    return () => { mounted = false; supabase.removeChannel(channel); };
+
+    const interval = setInterval(syncAudio, 500);
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -98,6 +140,29 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
           {isPlaying ? <><span className="live-dot" /> Tocando</> : <>Parado</>}
         </span>
       </div>
+
+      {autoplayBlocked && (
+        <div className="mb-6 rounded-md bg-amber-500/20 border border-amber-500/50 p-4 flex items-center justify-between">
+          <div className="text-sm text-amber-200">
+            O seu navegador bloqueou o início automático do som. Clique no botão ao lado para ativar a sincronização de áudio.
+          </div>
+          <button
+            onClick={async () => {
+              setAutoplayBlocked(false);
+              const list = Object.values(audios.current).filter(Boolean) as HTMLAudioElement[];
+              for (const a of list) {
+                try {
+                  await a.play();
+                } catch (e) {}
+              }
+              syncAudio();
+            }}
+            className="rounded bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-400"
+          >
+            Ativar Som
+          </button>
+        </div>
+      )}
 
       <div className="surface mb-6 flex items-center gap-3 p-4">
         <Radio className="h-5 w-5 text-primary" />
