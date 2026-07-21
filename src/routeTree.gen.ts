@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedSomRouteImport } from './routes/_authenticated/som'
+import { Route as AuthenticatedMusicosRouteImport } from './routes/_authenticated/musicos'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAdminSongsIdRouteImport } from './routes/_authenticated/admin.songs.$id'
 
@@ -29,6 +31,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedSomRoute = AuthenticatedSomRouteImport.update({
+  id: '/som',
+  path: '/som',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMusicosRoute = AuthenticatedMusicosRouteImport.update({
+  id: '/musicos',
+  path: '/musicos',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -45,12 +57,16 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/musicos': typeof AuthenticatedMusicosRoute
+  '/som': typeof AuthenticatedSomRoute
   '/admin/songs/$id': typeof AuthenticatedAdminSongsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/musicos': typeof AuthenticatedMusicosRoute
+  '/som': typeof AuthenticatedSomRoute
   '/admin/songs/$id': typeof AuthenticatedAdminSongsIdRoute
 }
 export interface FileRoutesById {
@@ -59,19 +75,23 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/_authenticated/musicos': typeof AuthenticatedMusicosRoute
+  '/_authenticated/som': typeof AuthenticatedSomRoute
   '/_authenticated/admin/songs/$id': typeof AuthenticatedAdminSongsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/admin' | '/admin/songs/$id'
+  fullPaths: '/' | '/auth' | '/admin' | '/musicos' | '/som' | '/admin/songs/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/admin' | '/admin/songs/$id'
+  to: '/' | '/auth' | '/admin' | '/musicos' | '/som' | '/admin/songs/$id'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/admin'
+    | '/_authenticated/musicos'
+    | '/_authenticated/som'
     | '/_authenticated/admin/songs/$id'
   fileRoutesById: FileRoutesById
 }
@@ -104,6 +124,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/som': {
+      id: '/_authenticated/som'
+      path: '/som'
+      fullPath: '/som'
+      preLoaderRoute: typeof AuthenticatedSomRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/musicos': {
+      id: '/_authenticated/musicos'
+      path: '/musicos'
+      fullPath: '/musicos'
+      preLoaderRoute: typeof AuthenticatedMusicosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -134,10 +168,14 @@ const AuthenticatedAdminRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
+  AuthenticatedMusicosRoute: typeof AuthenticatedMusicosRoute
+  AuthenticatedSomRoute: typeof AuthenticatedSomRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
+  AuthenticatedMusicosRoute: AuthenticatedMusicosRoute,
+  AuthenticatedSomRoute: AuthenticatedSomRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
