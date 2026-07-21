@@ -13,8 +13,10 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const audios = useRef<Record<string, HTMLAudioElement | null>>({});
+  const songIdRef = useRef<string | null>(null);
 
   async function loadTracksFor(sid: string) {
+    songIdRef.current = sid;
     const { data: s } = await supabase.from("songs").select("title").eq("id", sid).maybeSingle();
     setSongTitle((s as any)?.title ?? null);
     const { data, error } = await supabase
@@ -59,6 +61,7 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
       if (!mounted || !data) return;
       const sid = (data as any).current_song_id as string | null;
       setSongId(sid);
+      songIdRef.current = sid;
       if (sid) await loadTracksFor(sid);
       setTimeout(() => applyState(data as any), 250);
     })();
@@ -66,9 +69,16 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
       .channel("playback")
       .on("postgres_changes", { event: "*", schema: "public", table: "playback_state" }, async (payload: any) => {
         const state = payload.new;
-        if (state.current_song_id !== songId) {
+        if (!state) return;
+        if (state.current_song_id !== songIdRef.current) {
+          songIdRef.current = state.current_song_id;
           setSongId(state.current_song_id);
-          if (state.current_song_id) await loadTracksFor(state.current_song_id);
+          if (state.current_song_id) {
+            await loadTracksFor(state.current_song_id);
+          } else {
+            setSongTitle(null);
+            setTracks([]);
+          }
         }
         setTimeout(() => applyState(state), 200);
       })

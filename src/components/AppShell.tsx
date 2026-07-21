@@ -3,7 +3,7 @@ import { LogOut, Radio } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 
-export function AppShell({ title, children, roles }: { title: string; children: React.ReactNode; roles: string[] }) {
+export function AppShell({ title, children, roles = [] }: { title: string; children: React.ReactNode; roles?: string[] }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   async function signOut() {
@@ -22,9 +22,9 @@ export function AppShell({ title, children, roles }: { title: string; children: 
             <span className="ml-3 text-sm text-muted-foreground">/ {title}</span>
           </Link>
           <nav className="flex items-center gap-1 text-sm">
-            {roles.includes("admin") && <NavLink to="/admin">Admin</NavLink>}
-            {(roles.includes("admin") || roles.includes("musico")) && <NavLink to="/musicos">Músicos</NavLink>}
-            {(roles.includes("admin") || roles.includes("som")) && <NavLink to="/som">Som</NavLink>}
+            {roles?.includes("admin") && <NavLink to="/admin">Admin</NavLink>}
+            {(roles?.includes("admin") || roles?.includes("musico")) && <NavLink to="/musicos">Músicos</NavLink>}
+            {(roles?.includes("admin") || roles?.includes("som")) && <NavLink to="/som">Som</NavLink>}
             <button onClick={signOut} className="ml-2 inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-foreground">
               <LogOut className="h-4 w-4" /> Sair
             </button>
