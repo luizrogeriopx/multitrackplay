@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Play, Pause, Radio, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Play, Pause, Radio, Trash2, Upload, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,6 +40,15 @@ function EditorPage() {
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
 
+  type UploadQueueItem = {
+    id: string;
+    name: string;
+    size: number;
+    status: 'pending' | 'uploading' | 'completed' | 'error';
+    errorMessage?: string;
+  };
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
+
   async function load() {
     const { data: s } = await supabase.from("songs").select("*").eq("id", id).maybeSingle();
     setSong(s as any);
@@ -65,18 +74,46 @@ function EditorPage() {
   async function handleFiles(files: FileList | null) {
     if (!files || !files.length) return;
     setUploading(true);
+
+    const newItems: UploadQueueItem[] = Array.from(files).map((file, idx) => ({
+      id: `${Date.now()}-${idx}-${file.name}`,
+      name: file.name,
+      size: file.size,
+      status: 'pending',
+    }));
+    setUploadQueue(newItems);
+
     try {
-      for (const file of Array.from(files)) {
-        const path = `${id}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-        const { error: upErr } = await supabase.storage.from("tracks").upload(path, file, { contentType: file.type || "audio/mpeg" });
-        if (upErr) throw upErr;
-        const { error: insErr } = await supabase.from("tracks").insert({
-          song_id: id, name: file.name.replace(/\.[^.]+$/, ""), storage_path: path,
-          mime: file.type || null, route: "both", volume: 1, order_index: tracks.length,
-        });
-        if (insErr) throw insErr;
+      const fileArray = Array.from(files);
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i];
+        const queueItemId = newItems[i].id;
+
+        setUploadQueue((prev) =>
+          prev.map((item) => (item.id === queueItemId ? { ...item, status: 'uploading' } : item))
+        );
+
+        try {
+          const path = `${id}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+          const { error: upErr } = await supabase.storage.from("tracks").upload(path, file, { contentType: file.type || "audio/mpeg" });
+          if (upErr) throw upErr;
+
+          const { error: insErr } = await supabase.from("tracks").insert({
+            song_id: id, name: file.name.replace(/\.[^.]+$/, ""), storage_path: path,
+            mime: file.type || null, route: "both", volume: 1, order_index: tracks.length + i,
+          });
+          if (insErr) throw insErr;
+
+          setUploadQueue((prev) =>
+            prev.map((item) => (item.id === queueItemId ? { ...item, status: 'completed' } : item))
+          );
+        } catch (err: any) {
+          setUploadQueue((prev) =>
+            prev.map((item) => (item.id === queueItemId ? { ...item, status: 'error', errorMessage: err.message } : item))
+          );
+        }
       }
-      toast.success("Faixas enviadas");
+      toast.success("Processamento de faixas concluído");
       await load();
     } catch (e: any) {
       toast.error(e.message);
@@ -200,6 +237,72 @@ function EditorPage() {
         {uploading ? "Enviando…" : "Clique ou arraste faixas (mp3, wav, flac, m4a, ogg)"}
         <input type="file" multiple accept="audio/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
       </label>
+
+      {uploadQueue.length > 0 && (
+        <div className="surface mb-6 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-semibold">Progresso do Upload</span>
+            <span className="text-xs text-muted-foreground">
+              {uploadQueue.filter(x => x.status === 'completed').length} de {uploadQueue.length} concluído(s)
+            </span>
+          </div>
+
+          <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-primary transition-all duration-300"
+              style={{
+                width: `${Math.round(
+                  ((uploadQueue.filter(x => x.status === 'completed' || x.status === 'error').length) /
+                    uploadQueue.length) *
+                    100
+                )}%`,
+              }}
+            />
+          </div>
+
+          <div className="max-h-48 overflow-y-auto space-y-2">
+            {uploadQueue.map((item) => (
+              <div key={item.id} className="flex items-center justify-between rounded bg-background/50 p-2 text-sm">
+                <span className="truncate max-w-[70%] font-medium">{item.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {(item.size / (1024 * 1024)).toFixed(2)} MB
+                  </span>
+                  {item.status === 'pending' && (
+                    <span className="text-xs text-muted-foreground">Pendente</span>
+                  )}
+                  {item.status === 'uploading' && (
+                    <span className="inline-flex items-center gap-1 text-xs text-blue-400 font-semibold">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Enviando
+                    </span>
+                  )}
+                  {item.status === 'completed' && (
+                    <span className="inline-flex items-center gap-1 text-xs text-green-400 font-semibold">
+                      <CheckCircle2 className="h-3 w-3" /> OK
+                    </span>
+                  )}
+                  {item.status === 'error' && (
+                    <span className="inline-flex items-center gap-1 text-xs text-destructive font-semibold" title={item.errorMessage}>
+                      <XCircle className="h-3 w-3" /> Falhou
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {!uploading && uploadQueue.length > 0 && (
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={() => setUploadQueue([])}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Limpar lista
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <ul className="space-y-2">
         {tracks.map((t) => (
