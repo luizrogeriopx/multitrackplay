@@ -8,7 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { supabase } from "@/integrations/supabase/client";
 import { inviteUser, listInvitedUsers, deleteInvitedUser } from "@/lib/admin.functions";
 
-export const Route = createFileRoute("/_authenticated/admin")({
+export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({ meta: [{ title: "Admin — Multitrack" }] }),
   beforeLoad: ({ context }: any) => {
     if (!context.roles?.includes("admin")) throw new Error("Somente admin");
