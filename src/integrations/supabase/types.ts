@@ -14,16 +14,173 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      playback_state: {
+        Row: {
+          current_song_id: string | null
+          id: number
+          is_playing: boolean
+          position_seconds: number
+          started_at_ms: number | null
+          updated_at: string
+        }
+        Insert: {
+          current_song_id?: string | null
+          id?: number
+          is_playing?: boolean
+          position_seconds?: number
+          started_at_ms?: number | null
+          updated_at?: string
+        }
+        Update: {
+          current_song_id?: string | null
+          id?: number
+          is_playing?: boolean
+          position_seconds?: number
+          started_at_ms?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playback_state_current_song_id_fkey"
+            columns: ["current_song_id"]
+            isOneToOne: false
+            referencedRelation: "songs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          email: string
+          id: string
+          must_change_password: boolean
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          email: string
+          id: string
+          must_change_password?: boolean
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          email?: string
+          id?: string
+          must_change_password?: boolean
+        }
+        Relationships: []
+      }
+      songs: {
+        Row: {
+          bpm: number | null
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          title: string
+        }
+        Insert: {
+          bpm?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          title: string
+        }
+        Update: {
+          bpm?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          title?: string
+        }
+        Relationships: []
+      }
+      tracks: {
+        Row: {
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          mime: string | null
+          name: string
+          order_index: number
+          route: Database["public"]["Enums"]["track_route"]
+          song_id: string
+          storage_path: string
+          volume: number
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          mime?: string | null
+          name: string
+          order_index?: number
+          route?: Database["public"]["Enums"]["track_route"]
+          song_id: string
+          storage_path: string
+          volume?: number
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          mime?: string | null
+          name?: string
+          order_index?: number
+          route?: Database["public"]["Enums"]["track_route"]
+          song_id?: string
+          storage_path?: string
+          volume?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tracks_song_id_fkey"
+            columns: ["song_id"]
+            isOneToOne: false
+            referencedRelation: "songs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "musico" | "som"
+      track_route: "musicos" | "som" | "both"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +307,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "musico", "som"],
+      track_route: ["musicos", "som", "both"],
+    },
   },
 } as const
