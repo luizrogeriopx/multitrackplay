@@ -24,10 +24,12 @@ export async function syncClockWithServer() {
     const serverDateStr = response.headers.get('date');
     if (serverDateStr) {
       const serverTime = new Date(serverDateStr).getTime();
-      const end = Date.now();
-      const latency = (end - start) / 2;
-      serverOffset = (serverTime + latency) - end;
-      console.log(`[ClockSync] Clock synchronized with server. Offset: ${serverOffset}ms (latency: ${latency}ms)`);
+      if (!isNaN(serverTime)) {
+        const end = Date.now();
+        const latency = (end - start) / 2;
+        serverOffset = (serverTime + latency) - end;
+        console.log(`[ClockSync] Clock synchronized with server. Offset: ${serverOffset}ms (latency: ${latency}ms)`);
+      }
     }
   } catch (e) {
     console.error("[ClockSync] Failed to sync clock with Supabase server:", e);

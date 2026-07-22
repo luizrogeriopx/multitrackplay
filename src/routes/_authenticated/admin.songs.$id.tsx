@@ -342,7 +342,12 @@ function EditorPage() {
                 ref={(el) => { audiosRef.current[t.id] = el; }}
                 src={urls[t.id]}
                 preload="auto"
-                onLoadedMetadata={(e) => setDuration((d) => Math.max(d, e.currentTarget.duration || 0))}
+                onLoadedMetadata={(e) => {
+                  const dur = e.currentTarget.duration;
+                  if (typeof dur === "number" && isFinite(dur) && !isNaN(dur)) {
+                    setDuration((d) => Math.max(d, dur));
+                  }
+                }}
                 onEnded={() => setIsPlaying(false)}
               />
             )}
