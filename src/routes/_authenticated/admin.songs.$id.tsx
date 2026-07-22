@@ -362,8 +362,9 @@ function RouteBadge({ route }: { route: TrackRoute }) {
     musicos: { label: "Músicos", color: "text-[color:var(--panel-musicos)]" },
     som: { label: "Som", color: "text-[color:var(--panel-som)]" },
     both: { label: "Ambos", color: "text-primary" },
-  }[route];
-  return <span className={`uppercase tracking-widest ${map.color}`}>→ {map.label}</span>;
+  };
+  const current = map[route] || map.both;
+  return <span className={`uppercase tracking-widest ${current.color}`}>→ {current.label}</span>;
 }
 
 function fmt(s: number) {
