@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Radio } from "lucide-react";
+import { getSyncTime, syncClockWithServer } from "@/lib/clockSync";
 
 type Track = { id: string; name: string; storage_path: string; route: "musicos" | "som" | "both"; volume: number; order_index: number };
 
@@ -45,7 +46,7 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
     if (list.length === 0) return;
 
     if (state.is_playing && state.started_at_ms) {
-      const target = (Date.now() - state.started_at_ms) / 1000;
+      const target = (getSyncTime() - state.started_at_ms) / 1000;
       setPosition(target);
       setIsPlaying(true);
 
@@ -79,6 +80,7 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      await syncClockWithServer();
       const { data } = await supabase.from("playback_state").select("*").eq("id", 1).maybeSingle();
       if (!mounted || !data) return;
       const sid = (data as any).current_song_id as string | null;

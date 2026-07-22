@@ -5,6 +5,7 @@ import { ArrowLeft, Play, Pause, Radio, Trash2, Upload, CheckCircle2, XCircle, L
 
 import { AppShell } from "@/components/AppShell";
 import { supabase } from "@/integrations/supabase/client";
+import { getSyncTime, syncClockWithServer } from "@/lib/clockSync";
 
 type TrackRoute = "musicos" | "som" | "both";
 type Track = {
@@ -57,7 +58,10 @@ function EditorPage() {
     const { data: pb } = await supabase.from("playback_state").select("current_song_id").eq("id", 1).maybeSingle();
     setLiveSongId((pb as any)?.current_song_id ?? null);
   }
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => {
+    load();
+    syncClockWithServer();
+  }, [id]);
 
   // Signed URLs (admin lê tudo via RLS)
   useEffect(() => {
@@ -162,7 +166,7 @@ function EditorPage() {
     audios.forEach((a) => (a.currentTime = position));
     await Promise.all(audios.map((a) => a.play()));
     setIsPlaying(true);
-    const startedAtMs = Date.now() - Math.floor(position * 1000);
+    const startedAtMs = getSyncTime() - Math.floor(position * 1000);
     await supabase.from("playback_state").update({
       current_song_id: id, is_playing: true, position_seconds: position, started_at_ms: startedAtMs, updated_at: new Date().toISOString(),
     }).eq("id", 1);
@@ -182,7 +186,7 @@ function EditorPage() {
     audios.forEach((a) => (a.currentTime = v));
     setPosition(v);
     if (isPlaying) {
-      const startedAtMs = Date.now() - Math.floor(v * 1000);
+      const startedAtMs = getSyncTime() - Math.floor(v * 1000);
       await supabase.from("playback_state").update({
         position_seconds: v, started_at_ms: startedAtMs, updated_at: new Date().toISOString(),
       }).eq("id", 1);
