@@ -36,8 +36,9 @@ export async function syncClockWithServer(samples = 7) {
 }
 
 export function getSyncTime(): number {
-  return Date.now() + serverOffset;
+  return Math.round(Date.now() + serverOffset);
 }
+
 
 export function isClockSynced() {
   return synced;
