@@ -1,41 +1,44 @@
 let serverOffset = 0;
+let synced = false;
 
-export async function syncClockWithServer() {
+async function sampleOnce(): Promise<{ offset: number; rtt: number } | null> {
   try {
-    const env = typeof import.meta !== 'undefined' && import.meta.env 
-      ? import.meta.env 
-      : (typeof process !== 'undefined' && process.env ? process.env : {});
-
-    const url = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
-    const key = env.VITE_SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_PUBLISHABLE_KEY;
-
-    if (!url || !key) {
-      console.warn("[ClockSync] Supabase URL or publishable key not found. Skipping server clock synchronization.");
-      return;
-    }
-
     const start = Date.now();
-    const response = await fetch(`${url}/rest/v1/`, {
-      method: 'HEAD',
-      headers: {
-        apikey: key,
-      },
-    });
-    const serverDateStr = response.headers.get('date');
-    if (serverDateStr) {
-      const serverTime = new Date(serverDateStr).getTime();
-      if (!isNaN(serverTime)) {
-        const end = Date.now();
-        const latency = (end - start) / 2;
-        serverOffset = (serverTime + latency) - end;
-        console.log(`[ClockSync] Clock synchronized with server. Offset: ${serverOffset}ms (latency: ${latency}ms)`);
-      }
-    }
-  } catch (e) {
-    console.error("[ClockSync] Failed to sync clock with Supabase server:", e);
+    const res = await fetch("/api/public/time", { cache: "no-store" });
+    const end = Date.now();
+    if (!res.ok) return null;
+    const { now } = (await res.json()) as { now: number };
+    const rtt = end - start;
+    // Assume server processed request at midpoint of RTT
+    const offset = now - (start + rtt / 2);
+    return { offset, rtt };
+  } catch {
+    return null;
   }
+}
+
+export async function syncClockWithServer(samples = 7) {
+  const results: { offset: number; rtt: number }[] = [];
+  for (let i = 0; i < samples; i++) {
+    const r = await sampleOnce();
+    if (r) results.push(r);
+  }
+  if (!results.length) {
+    console.warn("[ClockSync] no samples");
+    return;
+  }
+  // Pick sample with lowest RTT (most accurate)
+  results.sort((a, b) => a.rtt - b.rtt);
+  const best = results[0];
+  serverOffset = best.offset;
+  synced = true;
+  console.log(`[ClockSync] offset=${serverOffset}ms best_rtt=${best.rtt}ms samples=${results.length}`);
 }
 
 export function getSyncTime(): number {
   return Date.now() + serverOffset;
+}
+
+export function isClockSynced() {
+  return synced;
 }
