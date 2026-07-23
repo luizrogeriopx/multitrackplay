@@ -6,6 +6,11 @@ import { ArrowLeft, Play, Pause, Radio, Trash2, Upload, CheckCircle2, XCircle, L
 import { AppShell } from "@/components/AppShell";
 import { supabase } from "@/integrations/supabase/client";
 import { getSyncTime, syncClockWithServer } from "@/lib/clockSync";
+import { applyEffective, computeEffective, type PlaybackRow } from "@/lib/playbackSync";
+
+// How far in the future to schedule start/pause so every client has time
+// to buffer/seek and hit the exact same wall-clock moment.
+const SCHEDULE_LEAD_MS = 1200;
 
 type TrackRoute = "musicos" | "som" | "both";
 type Track = {
