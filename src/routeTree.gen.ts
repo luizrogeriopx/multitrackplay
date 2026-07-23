@@ -9,36 +9,36 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AuthenticatedMusicosRouteImport } from './routes/_authenticated/musicos'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedSomRouteImport } from './routes/_authenticated/som'
+import { Route as AuthenticatedMusicosRouteImport } from './routes/_authenticated/musicos'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedAdminSongsIdRouteImport } from './routes/_authenticated/admin.songs.$id'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedMusicosRoute = AuthenticatedMusicosRouteImport.update({
-  id: '/musicos',
-  path: '/musicos',
-  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSomRoute = AuthenticatedSomRouteImport.update({
   id: '/som',
   path: '/som',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMusicosRoute = AuthenticatedMusicosRouteImport.update({
+  id: '/musicos',
+  path: '/musicos',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
@@ -82,7 +82,12 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/auth' | '/musicos' | '/som' | '/admin/' | '/admin/songs/$id'
+    | '/'
+    | '/auth'
+    | '/musicos'
+    | '/som'
+    | '/admin/'
+    | '/admin/songs/$id'
   fileRoutesByTo: FileRoutesByTo
   to: '/' | '/auth' | '/musicos' | '/som' | '/admin' | '/admin/songs/$id'
   id:
@@ -104,11 +109,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -118,25 +123,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/musicos': {
-      id: '/_authenticated/musicos'
-      path: '/musicos'
-      fullPath: '/musicos'
-      preLoaderRoute: typeof AuthenticatedMusicosRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/som': {
       id: '/_authenticated/som'
       path: '/som'
       fullPath: '/som'
       preLoaderRoute: typeof AuthenticatedSomRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/musicos': {
+      id: '/_authenticated/musicos'
+      path: '/musicos'
+      fullPath: '/musicos'
+      preLoaderRoute: typeof AuthenticatedMusicosRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/': {
