@@ -1,0 +1,1 @@
+ALTER TABLE public.playback_state ADD COLUMN IF NOT EXISTS scheduled_at_ms bigint;

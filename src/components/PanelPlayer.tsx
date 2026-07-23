@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Radio } from "lucide-react";
-import { getSyncTime, syncClockWithServer } from "@/lib/clockSync";
+import { syncClockWithServer, getSyncTime } from "@/lib/clockSync";
+import { applyEffective, computeEffective, type PlaybackRow } from "@/lib/playbackSync";
 
 type Track = { id: string; name: string; storage_path: string; route: "musicos" | "som" | "both"; volume: number; order_index: number };
 
@@ -16,7 +17,8 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
   const audios = useRef<Record<string, HTMLAudioElement | null>>({});
   const songIdRef = useRef<string | null>(null);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
-  const playbackStateRef = useRef<{ is_playing: boolean; started_at_ms: number | null; position_seconds: number } | null>(null);
+  const stateRef = useRef<PlaybackRow | null>(null);
+  const scheduledTimerRef = useRef<number | null>(null);
 
   async function loadTracksFor(sid: string) {
     songIdRef.current = sid;
@@ -39,97 +41,114 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
   }
 
   const syncAudio = () => {
-    const state = playbackStateRef.current;
+    const state = stateRef.current;
     if (!state) return;
 
     const list = Object.values(audios.current).filter(Boolean) as HTMLAudioElement[];
     if (list.length === 0) return;
 
-    if (state.is_playing && state.started_at_ms) {
-      const target = (getSyncTime() - state.started_at_ms) / 1000;
-      setPosition(target);
-      setIsPlaying(true);
+    const eff = computeEffective(state);
+    setIsPlaying(eff.playing);
+    setPosition(Math.max(0, eff.target));
 
-      list.forEach((a) => {
-        if (a.paused) {
-          a.play().catch((err) => {
-            if (err.name === "NotAllowedError") {
-              setAutoplayBlocked(true);
-            }
-          });
-        }
-        // Sync if drift is > 300ms
-        if (Math.abs(a.currentTime - target) > 0.3) {
-          a.currentTime = target;
-        }
-      });
-    } else {
-      setPosition(state.position_seconds);
-      setIsPlaying(false);
+    applyEffective(list, eff, {
+      onAutoplayBlocked: () => setAutoplayBlocked(true),
+    });
 
-      list.forEach((a) => {
-        if (!a.paused) a.pause();
-        if (Math.abs(a.currentTime - state.position_seconds) > 0.15) {
-          a.currentTime = state.position_seconds;
-        }
-      });
+    // Schedule a precise re-sync exactly at the transition moment
+    if (eff.transitionInMs != null && eff.transitionInMs > 0) {
+      if (scheduledTimerRef.current) window.clearTimeout(scheduledTimerRef.current);
+      scheduledTimerRef.current = window.setTimeout(() => {
+        scheduledTimerRef.current = null;
+        syncAudio();
+      }, eff.transitionInMs);
     }
   };
 
-  // Subscribe to playback state
+  function normalize(row: any): PlaybackRow {
+    return {
+      is_playing: !!row.is_playing,
+      position_seconds: Number(row.position_seconds || 0),
+      started_at_ms: row.started_at_ms != null ? Number(row.started_at_ms) : null,
+      scheduled_at_ms: row.scheduled_at_ms != null ? Number(row.scheduled_at_ms) : null,
+      current_song_id: row.current_song_id ?? null,
+    };
+  }
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       await syncClockWithServer();
       const { data } = await supabase.from("playback_state").select("*").eq("id", 1).maybeSingle();
       if (!mounted || !data) return;
-      const sid = (data as any).current_song_id as string | null;
+      stateRef.current = normalize(data);
+      const sid = stateRef.current.current_song_id;
       setSongId(sid);
       songIdRef.current = sid;
-      playbackStateRef.current = {
-        is_playing: (data as any).is_playing,
-        started_at_ms: (data as any).started_at_ms ? Number((data as any).started_at_ms) : null,
-        position_seconds: Number((data as any).position_seconds || 0),
-      };
       if (sid) await loadTracksFor(sid);
-      syncAudio();
+      // Give audio a beat to attach
+      setTimeout(syncAudio, 100);
     })();
 
     const channel = supabase
       .channel("playback")
       .on("postgres_changes", { event: "*", schema: "public", table: "playback_state" }, async (payload: any) => {
-        const state = payload.new;
-        if (!state) return;
-
-        playbackStateRef.current = {
-          is_playing: state.is_playing,
-          started_at_ms: state.started_at_ms ? Number(state.started_at_ms) : null,
-          position_seconds: Number(state.position_seconds || 0),
-        };
-
-        if (state.current_song_id !== songIdRef.current) {
-          songIdRef.current = state.current_song_id;
-          setSongId(state.current_song_id);
-          if (state.current_song_id) {
-            await loadTracksFor(state.current_song_id);
+        const row = payload.new;
+        if (!row) return;
+        stateRef.current = normalize(row);
+        if (row.current_song_id !== songIdRef.current) {
+          songIdRef.current = row.current_song_id;
+          setSongId(row.current_song_id);
+          if (row.current_song_id) {
+            await loadTracksFor(row.current_song_id);
+            // Wait a tick for audio elements to mount and start buffering
+            setTimeout(syncAudio, 150);
+            return;
           } else {
             setSongTitle(null);
             setTracks([]);
           }
         }
-        setTimeout(syncAudio, 50);
+        syncAudio();
       })
       .subscribe();
 
-    const interval = setInterval(syncAudio, 500);
+    // Light drift correction loop while playing
+    const interval = window.setInterval(() => {
+      const s = stateRef.current;
+      if (!s) return;
+      // Only run drift correction when actively playing (not during scheduled window)
+      const eff = computeEffective(s);
+      if (eff.playing) {
+        const list = Object.values(audios.current).filter(Boolean) as HTMLAudioElement[];
+        if (list.length) {
+          setPosition(Math.max(0, eff.target));
+          for (const a of list) {
+            if (Math.abs(a.currentTime - eff.target) > 0.15) {
+              a.currentTime = Math.max(0, eff.target);
+            }
+          }
+        }
+      }
+    }, 1000);
 
     return () => {
       mounted = false;
       supabase.removeChannel(channel);
-      clearInterval(interval);
+      window.clearInterval(interval);
+      if (scheduledTimerRef.current) window.clearTimeout(scheduledTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-sync when new audio elements mount (tracks loaded)
+  useEffect(() => {
+    if (tracks.length > 0) {
+      // Once metadata loads on all, run sync
+      const t = window.setTimeout(syncAudio, 200);
+      return () => window.clearTimeout(t);
+    }
+  }, [tracks, urls]);
 
   return (
     <div>
@@ -152,10 +171,9 @@ export function PanelPlayer({ panel }: { panel: "musicos" | "som" }) {
             onClick={async () => {
               setAutoplayBlocked(false);
               const list = Object.values(audios.current).filter(Boolean) as HTMLAudioElement[];
+              // Unlock by briefly playing & pausing so future scheduled plays work
               for (const a of list) {
-                try {
-                  await a.play();
-                } catch (e) {}
+                try { await a.play(); a.pause(); } catch {}
               }
               syncAudio();
             }}

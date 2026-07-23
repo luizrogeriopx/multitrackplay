@@ -6,6 +6,11 @@ import { ArrowLeft, Play, Pause, Radio, Trash2, Upload, CheckCircle2, XCircle, L
 import { AppShell } from "@/components/AppShell";
 import { supabase } from "@/integrations/supabase/client";
 import { getSyncTime, syncClockWithServer } from "@/lib/clockSync";
+import { applyEffective, computeEffective, type PlaybackRow } from "@/lib/playbackSync";
+
+// How far in the future to schedule start/pause so every client has time
+// to buffer/seek and hit the exact same wall-clock moment.
+const SCHEDULE_LEAD_MS = 1200;
 
 type TrackRoute = "musicos" | "som" | "both";
 type Track = {
@@ -138,64 +143,141 @@ function EditorPage() {
     load();
   }
 
-  // Playback
+  // Playback — admin uses the SAME scheduled-sync logic as the panels
+  // so its own audios hit the exact wall-clock moment.
   const allAudios = () => Object.values(audiosRef.current).filter(Boolean) as HTMLAudioElement[];
+  const stateRef = useRef<PlaybackRow | null>(null);
+  const scheduledTimerRef = useRef<number | null>(null);
 
+  const applySync = () => {
+    const state = stateRef.current;
+    if (!state) return;
+    const list = allAudios();
+    if (!list.length) return;
+    const eff = computeEffective(state);
+    setIsPlaying(eff.playing);
+    setPosition(Math.max(0, eff.target));
+    applyEffective(list, eff);
+    if (eff.transitionInMs != null && eff.transitionInMs > 0) {
+      if (scheduledTimerRef.current) window.clearTimeout(scheduledTimerRef.current);
+      scheduledTimerRef.current = window.setTimeout(() => {
+        scheduledTimerRef.current = null;
+        applySync();
+      }, eff.transitionInMs);
+    }
+  };
+
+  // Poll playback_state (admin editor doesn't need realtime because it writes)
+  // but still refresh position from actual audio while playing.
   useEffect(() => {
     const onTime = () => {
-      const first = allAudios()[0];
-      if (first) setPosition(first.currentTime);
+      const s = stateRef.current;
+      if (s && computeEffective(s).playing) {
+        const first = allAudios()[0];
+        if (first) setPosition(first.currentTime);
+      }
     };
-    const id = window.setInterval(onTime, 200);
-    return () => window.clearInterval(id);
+    const t = window.setInterval(onTime, 200);
+    return () => {
+      window.clearInterval(t);
+      if (scheduledTimerRef.current) window.clearTimeout(scheduledTimerRef.current);
+    };
   }, []);
 
   async function putOnAir() {
-    const { error } = await supabase.from("playback_state").update({
-      current_song_id: id, is_playing: false, position_seconds: 0, started_at_ms: null, updated_at: new Date().toISOString(),
-    }).eq("id", 1);
+    const now = getSyncTime();
+    const row = {
+      current_song_id: id,
+      is_playing: false,
+      position_seconds: 0,
+      started_at_ms: null,
+      scheduled_at_ms: now,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from("playback_state").update(row).eq("id", 1);
     if (error) return toast.error(error.message);
     setLiveSongId(id);
+    stateRef.current = { ...row, current_song_id: id } as any;
+    applySync();
     toast.success("Canção no ar");
   }
 
   async function play() {
     const audios = allAudios();
     if (!audios.length) return;
-    // sync to earliest position
+    // Pre-seek so decoding is warm before the scheduled start
     audios.forEach((a) => (a.currentTime = position));
-    await Promise.all(audios.map((a) => a.play()));
-    setIsPlaying(true);
-    const startedAtMs = getSyncTime() - Math.floor(position * 1000);
-    await supabase.from("playback_state").update({
-      current_song_id: id, is_playing: true, position_seconds: position, started_at_ms: startedAtMs, updated_at: new Date().toISOString(),
-    }).eq("id", 1);
+    const startAt = getSyncTime() + SCHEDULE_LEAD_MS;
+    const startedAtMs = startAt - Math.floor(position * 1000);
+    const row = {
+      current_song_id: id,
+      is_playing: true,
+      position_seconds: position,
+      started_at_ms: startedAtMs,
+      scheduled_at_ms: startAt,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from("playback_state").update(row).eq("id", 1);
+    if (error) return toast.error(error.message);
+    stateRef.current = { ...row, current_song_id: id } as any;
+    applySync();
   }
+
   async function pause() {
     const audios = allAudios();
-    audios.forEach((a) => a.pause());
-    const pos = audios[0]?.currentTime ?? position;
-    setIsPlaying(false);
-    setPosition(pos);
-    await supabase.from("playback_state").update({
-      is_playing: false, position_seconds: pos, started_at_ms: null, updated_at: new Date().toISOString(),
-    }).eq("id", 1);
+    if (!audios.length) return;
+    const prev = stateRef.current;
+    const pauseAt = getSyncTime() + SCHEDULE_LEAD_MS;
+    // Compute what the playhead will be at pauseAt so panels & admin stop at the exact same position
+    const startedAtMs = prev?.started_at_ms ?? (pauseAt - Math.floor(position * 1000));
+    const posAtPause = (pauseAt - startedAtMs) / 1000;
+    const row = {
+      is_playing: false,
+      position_seconds: posAtPause,
+      started_at_ms: startedAtMs, // keep so pre-pauseAt window still plays in sync
+      scheduled_at_ms: pauseAt,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from("playback_state").update(row).eq("id", 1);
+    if (error) return toast.error(error.message);
+    stateRef.current = { ...(prev ?? { current_song_id: id }), ...row } as any;
+    applySync();
   }
+
   async function seek(v: number) {
     const audios = allAudios();
     audios.forEach((a) => (a.currentTime = v));
     setPosition(v);
+    const prev = stateRef.current;
     if (isPlaying) {
-      const startedAtMs = getSyncTime() - Math.floor(v * 1000);
-      await supabase.from("playback_state").update({
-        position_seconds: v, started_at_ms: startedAtMs, updated_at: new Date().toISOString(),
-      }).eq("id", 1);
+      const startAt = getSyncTime() + SCHEDULE_LEAD_MS;
+      const startedAtMs = startAt - Math.floor(v * 1000);
+      const row = {
+        is_playing: true,
+        position_seconds: v,
+        started_at_ms: startedAtMs,
+        scheduled_at_ms: startAt,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from("playback_state").update(row).eq("id", 1);
+      if (error) return toast.error(error.message);
+      stateRef.current = { ...(prev ?? { current_song_id: id }), ...row } as any;
+      applySync();
     } else {
-      await supabase.from("playback_state").update({
-        position_seconds: v, updated_at: new Date().toISOString(),
-      }).eq("id", 1);
+      const row = {
+        is_playing: false,
+        position_seconds: v,
+        started_at_ms: null,
+        scheduled_at_ms: getSyncTime(),
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from("playback_state").update(row).eq("id", 1);
+      if (error) return toast.error(error.message);
+      stateRef.current = { ...(prev ?? { current_song_id: id }), ...row } as any;
+      applySync();
     }
   }
+
 
   const isLive = liveSongId === id;
 
