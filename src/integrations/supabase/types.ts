@@ -20,6 +20,7 @@ export type Database = {
           id: number
           is_playing: boolean
           position_seconds: number
+          scheduled_at_ms: number | null
           started_at_ms: number | null
           updated_at: string
         }
@@ -28,6 +29,7 @@ export type Database = {
           id?: number
           is_playing?: boolean
           position_seconds?: number
+          scheduled_at_ms?: number | null
           started_at_ms?: number | null
           updated_at?: string
         }
@@ -36,6 +38,7 @@ export type Database = {
           id?: number
           is_playing?: boolean
           position_seconds?: number
+          scheduled_at_ms?: number | null
           started_at_ms?: number | null
           updated_at?: string
         }
